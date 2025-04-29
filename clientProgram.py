@@ -3,6 +3,7 @@ import socket
 #Variables
 MAXBYTES = 120
 mainSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+valid = False
 
 #Grab and check the users input
 while True:
@@ -28,15 +29,20 @@ while True:
         
 
 #Message Sending 
-while True:
-    message = input("Enter a message to send(exit() to quit): ")#Gets the users message
-    mainSocket.send(bytearray(message, encoding='utf-8'))
-    if message == 'exit()':#Checks for if the message is exit() and stops the program if that is the case
-        mainSocket.close()
-        break
+while not valid:
+    selection = int(input("Please choose from the flowing options:\n" \
+    "1. What is the average moisture inside my kitchen fridge in the past three hours?\n"\
+    "2. What is the average water consumption per cycle in my smart dishwasher?\n"\
+    "3. Which device consumed more electricity among my three IoT devices "\
+    "(two refrigerators and a dishwasher)?\n"))#Gets the users message
+    if selection > 3 or selection < 1:
+        print('Sorry, this query cannot be processed.' )
+        continue
+    mainSocket.send(bytearray(selection, encoding='utf-8'))
     response = mainSocket.recv(MAXBYTES).decode()
     print(f'Server response: {response}')
-
+    valid = True
+mainSocket.close()
 
 
     
