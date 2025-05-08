@@ -96,7 +96,7 @@ while receivingMessages:
     else:
         response = "Invalid input. Enter 1, 2, or 3"
 
-    incomingSocket.send(bytearray(response + "\n", encoding="utf-8"))
+    incomingSocket.send(bytearray(response, encoding="utf-8"))
 
 incomingSocket.close()
 TCPSocket.close()

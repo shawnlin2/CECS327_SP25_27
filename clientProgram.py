@@ -54,8 +54,8 @@ while running:
         elif selection == '2':
             print(f'Average Water used in Washing Machine: {response} gallons')
         else:
-
             print(response)
+        print()
     valid = False
 
 mainSocket.close()
