@@ -49,7 +49,13 @@ while running:
     else:      
         mainSocket.send(bytearray(selection, encoding='utf-8'))
         response = mainSocket.recv(MAXBYTES).decode()
-        print(f'Server response: {response}')
+        if selection == '1':
+            print(f'Average Fridge Moister: {response} ')
+        elif selection == '2':
+            print(f'Average Water used in Washing Machine: {response} gallons')
+        else:
+
+            print(response)
     valid = False
 
 mainSocket.close()

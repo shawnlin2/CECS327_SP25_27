@@ -6,36 +6,34 @@ MAX_BYTES_TO_RECEIVE = 10000
 MAX_BACKLOG = 5
 
 # NeonDB config (replace with your real info)
-NEON_DB_DSN = "postgresql://neondb_owner:npg_jay3W2fxAceG@ep-soft-tooth-a5d2vt4l-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+NEON_DB_DSN = "postgresql://neondb_owner:npg_0srythD3oBMH@ep-sparkling-hat-a5078nm2-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
 
 # SQL Queries
 QUERIES = {
     "1": """
-        SELECT AVG((payload->>'Moisture Meter - Moisture Meter')::FLOAT)
-        FROM NeonDBTable_virtual
-        WHERE time >= NOW() - INTERVAL '3 hours'
-          AND payload->>'board_name' = 'Smart Fridge Board';
+        SELECT avg(value::FLOAT) AS total_moisture
+        FROM public."NeonDBTable_virtual",
+            jsonb_each_text(payload::jsonb) AS kv(key, value)
+        WHERE key ~* 'Moisture Meter'
+           AND time >= NOW() - INTERVAL '3 hours'
+                 AND payload->>'board_name' IN ('Fridge Board', 'Fridge 2 Board')
     """,
     "2": """
-        SELECT AVG((payload->>'YF-S201 - Water Flow Sensor Dishwasher 1')::FLOAT)
-        FROM NeonDBTable_virtual
+        SELECT AVG((payload->>'YF-S201 - Water Flow Sensor Dishwasher 1')::FLOAT * 0.26)
+        FROM public."NeonDBTable_virtual"
         WHERE time >= NOW() - INTERVAL '3 hours'
-          AND payload->>'board_name' = 'Smart Dishwasher Board';
+          AND payload->>'board_name' = 'DishWasher Board';
     """,
     "3": """
-        SELECT payload->>'board_name' AS device,
-               SUM(ABS((payload->>'ACS712 - Ammeter')::FLOAT)) AS total_current
-        FROM NeonDBTable_virtual
+        SELECT payload->>'board_name' AS device, SUM(ABS(value::FLOAT)) AS total_current
+        FROM public."NeonDBTable_virtual",
+            jsonb_each_text(payload::jsonb) AS kv(key, value)
         WHERE time >= NOW() - INTERVAL '3 hours'
-          AND payload->>'board_name' IN (
-            'Smart Fridge Board',
-            'Smart Dishwasher Board',
-            'board 1 d0966882-8c71-4b19-ae00-be3895128888'
-          )
-        GROUP BY device
-        ORDER BY total_current DESC
-        LIMIT 1;
+            AND key ~* 'ACS712'
+        GROUP BY payload->>'board_name'
+        ORDER BY payload->>'board_name'
+        LIMIT 1
     """
 }
 
@@ -48,7 +46,8 @@ def get_query_result(choice):
                 if result is None:
                     return "No data found."
                 if choice == "3":
-                    return f"{result[0]} consumed {result[1]:.2f} total amps in the last 3 hours"
+                    device, board = result[0].split(' Board') 
+                    return f"{device} consumed {result[1]:.2f} total amps in the last 3 hours"
                 return f"{float(result[0]):.2f}"
     except Exception as e:
         return f"Database error: {e}"
@@ -72,7 +71,7 @@ while not socketEstablished:
 
     if validInput:
         try:
-            TCPSocket.bind(('0.0.0.0', portNumber))
+            TCPSocket.bind(('', portNumber))
             socketEstablished = True
         except socket.error as e:
             print(f"Error establishing socket: {e}")
@@ -84,11 +83,11 @@ print("Connection established. Awaiting message from client")
 
 receivingMessages = True
 while receivingMessages:
-    incomingSocket.send(b"Choose query: 1 (Fridge moisture), 2 (Dishwasher water), 3 (Highest energy user)\n")
+    #incomingSocket.send(b"Choose query: 1 (Fridge moisture), 2 (Dishwasher water), 3 (Highest energy user)\n")
     incomingMessage = incomingSocket.recv(MAX_BYTES_TO_RECEIVE).decode().strip()
     print(f"Incoming message: {incomingMessage}")
 
-    if incomingMessage == 'quit':
+    if incomingMessage == 'exit()':
         receivingMessages = False
         break
 
