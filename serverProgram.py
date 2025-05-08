@@ -1,37 +1,103 @@
 import socket
+import psycopg2
+import time
 
-#Variables
-mainSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-MAXBYTE = 120
+MAX_BYTES_TO_RECEIVE = 10000
+MAX_BACKLOG = 5
 
-#Getting the users input to set up the port
-while True:
+# NeonDB config (replace with your real info)
+NEON_DB_DSN = "postgresql://neondb_owner:npg_jay3W2fxAceG@ep-soft-tooth-a5d2vt4l-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+
+
+# SQL Queries
+QUERIES = {
+    "1": """
+        SELECT AVG((payload->>'Moisture Meter - Moisture Meter')::FLOAT)
+        FROM NeonDBTable_virtual
+        WHERE time >= NOW() - INTERVAL '3 hours'
+          AND payload->>'board_name' = 'Smart Fridge Board';
+    """,
+    "2": """
+        SELECT AVG((payload->>'YF-S201 - Water Flow Sensor Dishwasher 1')::FLOAT)
+        FROM NeonDBTable_virtual
+        WHERE time >= NOW() - INTERVAL '3 hours'
+          AND payload->>'board_name' = 'Smart Dishwasher Board';
+    """,
+    "3": """
+        SELECT payload->>'board_name' AS device,
+               SUM(ABS((payload->>'ACS712 - Ammeter')::FLOAT)) AS total_current
+        FROM NeonDBTable_virtual
+        WHERE time >= NOW() - INTERVAL '3 hours'
+          AND payload->>'board_name' IN (
+            'Smart Fridge Board',
+            'Smart Dishwasher Board',
+            'board 1 d0966882-8c71-4b19-ae00-be3895128888'
+          )
+        GROUP BY device
+        ORDER BY total_current DESC
+        LIMIT 1;
+    """
+}
+
+def get_query_result(choice):
     try:
-        port = int(input('Enter the server port: '))
-        if port < 0:#Check to make sure that the port is a positive nonzero integer
-            print("Port number can not be less than zero")
-            continue
-        mainSocket.bind(('localhost', port))
+        with psycopg2.connect(dsn=NEON_DB_DSN) as conn:
+            with conn.cursor() as cur:
+                cur.execute(QUERIES[choice])
+                result = cur.fetchone()
+                if result is None:
+                    return "No data found."
+                if choice == "3":
+                    return f"{result[0]} consumed {result[1]:.2f} total amps in the last 3 hours"
+                return f"{float(result[0]):.2f}"
+    except Exception as e:
+        return f"Database error: {e}"
+
+
+# --- Original TCP Setup Below ---
+
+TCPSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+socketEstablished = False
+
+while not socketEstablished:
+    validInput = False
+    try:
+        enteredPortNumber = input('Enter server port number: ')
+        portNumber = int(enteredPortNumber)
+        if portNumber < 0:
+            raise ValueError
+        validInput = True
+    except ValueError:
+        print(f"Port number must be a non-negative integer. Entered value: {enteredPortNumber}")
+
+    if validInput:
+        try:
+            TCPSocket.bind(('0.0.0.0', portNumber))
+            socketEstablished = True
+        except socket.error as e:
+            print(f"Error establishing socket: {e}")
+
+TCPSocket.listen(MAX_BACKLOG)
+incomingSocket, incomingAddress = TCPSocket.accept()
+
+print("Connection established. Awaiting message from client")
+
+receivingMessages = True
+while receivingMessages:
+    incomingSocket.send(b"Choose query: 1 (Fridge moisture), 2 (Dishwasher water), 3 (Highest energy user)\n")
+    incomingMessage = incomingSocket.recv(MAX_BYTES_TO_RECEIVE).decode().strip()
+    print(f"Incoming message: {incomingMessage}")
+
+    if incomingMessage == 'quit':
+        receivingMessages = False
         break
-    
-    except ValueError as error:#Grabs the error if the user did not enter a integer for the port
-        print("Port number can not be a none number")
-    except socket.error as error: #Grabs any error that has to do with the socket
-        print(f"Error: {error}")
-        print(f"Try Again")
 
-mainSocket.listen(5)
-incomingSocket, incomingAddress = mainSocket.accept()
-
-#Simulates the user's action
-while True:
-    message = incomingSocket.recv(MAXBYTE).decode()#Gets the message and decodes it
-    if message != "exit()":#Checks for the message not being exit()
-        newMessage = message.upper()
-        incomingSocket.send(bytearray(newMessage, encoding="utf-8"))
+    if incomingMessage in {"1", "2", "3"}:
+        response = get_query_result(incomingMessage)
     else:
-        incomingSocket.close()#Closes the incomingSocket
-        mainSocket.close() #Closes the mainSocket 
-        break
-    
+        response = "Invalid input. Enter 1, 2, or 3"
 
+    incomingSocket.send(bytearray(response + "\n", encoding="utf-8"))
+
+incomingSocket.close()
+TCPSocket.close()
